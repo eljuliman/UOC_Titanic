@@ -1,0 +1,318 @@
+---
+title: "PRA2_MANZANO_JULEN_CICLO_VIDA"
+author: "Julen Manzano"
+date: "4/22/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+PRACTICA 2 - CICLO DE VIDA DE LOS DATOS
+
+1.- Descripción del dataset. ¿Por qué es importante y que pregunta pretende responde?
+
+El dataset seleccionado es Titanic: Machine Learning from Disaster, competición activa de Kaggle. Es uno de los dataset mas famosos, quizá junto al Iris-Setosa si alguno mas debiéramos mencionar, para la práctica del aprendizaje del procesado y análisis de datos. 
+
+El objetivo principal del dataset se centra en determinar mediante el resto de atributos si un pasajero del famoso RMS Titanic sobrevive o muere en el hundimiento aquella fatidica noche del 14 al 15 de abril de 1912.
+
+2.- Integración y selección de los datos de interés a analizar.
+
+Importamos los datos desde el archivo train proporcionado y realizamos un primer summary que nos permita observar como R ha entendido la información. (tipo de dato)
+
+```{r}
+library(readr)
+dataTitanic <- read_csv("Desktop/titanic/train.csv")
+
+summary(dataTitanic)
+```
+
+Los datos descritos son los siguientes:
+
+Survival: 0 = No, 1 = Sí. Determina si el pasajero sobrevivió o no al hundimiento
+pclass: Clase asociada al ticket, identifica mediante el 1: Primera clase, 2: Segunda clase, 3: Tercera clase. 
+sex: Sexo del pasajero
+age: Edad en años del pasajero
+sibsp: número de esposas / hermanos que viajan junto al pasajero
+parch: número de padres / hijos que viajan junto al pasajero
+ticket: número de ticket asociado al pasaje del viajero
+fare: tarifa del pasajero
+cabin: número de cabina del pasajero
+embarked: puerto de embarque, C=Cherbourg, Q=Queenstown, S=Southampton
+
+Los datos Survived, pclass, sex y embarked son de tipo factor
+Los datos PassengerId, Name, Ticket, Cabin son de tipo String
+Los datos Age, SibSp, Parch son de tipo entero
+Los datos Fare son de tipo Float. 
+
+Ajustamos cada atributo al tipo de dato adecuado
+
+
+```{r}
+colnames(dataTitanic)
+```
+```{r}
+dataTitanic$Survived<-as.factor(dataTitanic$Survived)
+dataTitanic$Pclass<-as.factor(dataTitanic$Pclass)
+dataTitanic$Sex<-as.factor(dataTitanic$Sex)
+dataTitanic$Embarked<-as.factor(dataTitanic$Embarked)
+summary(dataTitanic)
+
+```
+
+Creamos un nuevo dataset con aquellos atributos que nos pueden resultar interesantes para nuestro análisis. 
+
+En este caso eliminamos el PassengerId al considerar que no es necesario.
+
+```{r}
+library(dplyr) # Cargar la librería de manipulación de dataframes "dplyr"
+dataSelect <- select(dataTitanic, Survived, Pclass, Sex, Age, SibSp, Parch, Fare, Ticket, Cabin, Embarked)
+summary (dataSelect)
+```
+
+3.- Limpieza de datos. 
+
+3.1. ¿Los datos contienen ceros o elementos vacios? ¿Cómo gestionarías cada uno de estos casos?
+
+El primer atributo en el que detectamos valores faltantes es Age, un valor entero que contiene 177 NA's. Vamos a procurar dotarles de información imputando con la media (usamos el paquete mice)
+```{r}
+library(mice)
+library(VIM)
+aggr(dataSelect, numbers=T,sortVar=T)
+
+
+```
+
+Detectamos los valor nulos en los atributos cabin, age y embarked.
+
+Cabin es un registro poco informado que en principio no parece que nos pueda mostrar información relacionada con el caso. Como mucho podríamos pensar en utilizarla para intentar localizar valores nulos en la clase, intentando buscar la correlación entre los códigos de cabina y su ubicación en el barco. Por lo tanto, dado que pclass se encuentra plenamente informado procederemos a eliminar este atributo de nuestro dataset de estudio.
+
+```{r}
+dataSelect <- select(dataTitanic, Survived, Pclass, Sex, Age, SibSp, Parch, Fare,  Embarked)
+```
+
+
+Age es un atributo entero que tiene una serie de valores no informados. Vamos a intentar imputar con la media los resultados faltantes.
+
+```{r}
+dataSelect[is.na(dataSelect$Age), "Age"]<-mean(dataSelect$Age, na.rm = T)
+aggr(dataSelect, numbers=T,sortVar=T)
+
+
+```
+
+En el caso de Embarked es un atributo de tipo factor, en este caso sustituiremos por la moda
+
+```{r}
+library(modeest)
+moda<-mlv(dataSelect$Embarked, method ="mfv")
+dataSelect[is.na(dataSelect$Embarked), "Embarked"]<-moda
+aggr(dataSelect, numbers=T,sortVar=T)
+```
+
+3.2. Identificación y tratamiento de valores extremos
+
+Obseramos aquellos valores numéricos que puedan contener valores extremos mediante el uso de gráficos de cajas
+
+```{r}
+library(ggplot2)
+boxplot(dataSelect$Age, main = "Age", outline = TRUE)
+```
+
+
+
+```{r}
+boxplot(dataSelect$SibSp, main = "Sibsp", outline = TRUE)
+```
+
+
+```{r}
+boxplot(dataSelect$Parch, main = "Parch", outline = TRUE)
+```
+
+```{r}
+boxplot(dataSelect$Fare, main = "Fare", outline = TRUE)
+```
+
+```{r}
+ggplot(dataSelect, aes(x = as.numeric(Fare))) +
+  geom_density() +
+  scale_x_continuous("Fare") + 
+  scale_y_continuous("Frecuencia") +
+  labs(title = "Histograma de frecuencias",
+       subtitle = "Precio del pasaje")
+```
+
+
+No vamos a considerar ningun valor como outlier. Todos se encuentran dentro de valores lógicos y si bien el precio del billete ha podido despertar sospechas por sus valores a cero o sus valores superiores a 500 no destacan por una situación que no pudiera darse dentro de un sentido lógico, o de un precio muy caro por un camarote o servicio extraordinario, como de precios de billete sin coste asociados a acciones promocionales o clientes corporativos.
+
+
+
+4.- Análisis de los datos
+
+4.1. Selección de los grupos de datos que se quieren analizar/comparar (planificación de los análisis a aplicar)
+
+Vamos a observar la incidencia de cada atributo con el resultado de supervivencia final mediante la aplicación de gráficas que muestren en el eje x el atributo a estudiar versus el eje y que almacenará el valor de la supervivencia. Es necesario que transformemos el dataset para poder trabajar adecuadamente en estas tareas
+
+
+```{r}
+newdata = dataSelect
+newdata$Survived = as.integer(newdata$Survived)
+newdata$Pclass = as.integer(newdata$Pclass)
+newdata$Sex = as.integer(newdata$Sex)
+newdata$Age = as.integer(newdata$Age)
+newdata$SibSp = as.integer(newdata$SibSp)
+newdata$Parch = as.integer(newdata$Parch)
+newdata$Fare = as.integer(newdata$Fare)
+newdata$Embarked = as.character(newdata$Embarked)
+newdata$Embarked[newdata$Embarked =="C"]<-1
+newdata$Embarked[newdata$Embarked =="Q"]<-2
+newdata$Embarked[newdata$Embarked =="S"]<-3
+newdata$Embarked = as.integer(newdata$Embarked)
+summary(newdata)
+
+
+
+```
+
+Una vez tenemos los datos con caracter numérico comenzamos a compararlas
+
+```{r}
+vector = c(0,0)
+vector[1] = mean(newdata$Survived[newdata$Sex==1])
+vector[2] = mean(newdata$Survived[newdata$Sex==2])
+plot(vector, main="Influencia Supervivencia versus Sexo", xlab="Sexo (1) Mujer, (2) Hombre", ylab="Supervivencia" )
+
+```
+Como conocemos por la historia del titanic y comprobamos en los datos, el ser hombre no era buena opción para sobrevivir al incidente
+
+
+
+```{r}
+
+vector = c(0,0,0)
+vector[1] = mean(newdata$Survived[newdata$Pclass==1])
+vector[2] = mean(newdata$Survived[newdata$Pclass==2])
+vector[3] = mean(newdata$Survived[newdata$Pclass==3])
+plot(vector, main="Influencia Supervivencia versus Clase", xlab="Primera (1), Segunda (2), Tercera (3)", ylab="Supervivencia" )
+
+
+
+```
+
+
+Respeto a la categoría del billete comprado vemos como efectivamente la supervivencia estaba fuertemente ligada a la posición económica
+
+
+4.2 Comprobación de la normalidad y homogeneidad de la varianza
+
+Utilizamos el test de Shapiro-Wilk asumiendo como hipótesis nula que la población está distribuida normalmente
+
+```{r}
+shapiro.test(newdata$Age)
+```
+```{r}
+shapiro.test(newdata$SibSp)
+```
+
+```{r}
+shapiro.test(newdata$Fare)
+```
+
+Observamos que los datos no reflejan una distribución normal
+
+4.3. Aplicación de pruebas estadísticas para comparar los grupos de datos. En función de los datos y el objetivo del estudio aplicar pruebas de contrastes de hipótesis, correlaciones, regresiones, etc. 
+
+a) Regresión: Probaremos la relación entre la edad y el coste del billete
+
+```{r}
+modelo <-lm(Age~Fare, data=newdata)
+plot(modelo)
+```
+
+```{r}
+summary(modelo)
+```
+b) Estudio de correlaciones
+
+```{r}
+cor.test (newdata$Survived, newdata$Pclass)
+```
+
+
+```{r}
+library(corrplot)
+correlacion <- cor(newdata)
+corrplot(correlacion, method = "ellipse")
+```
+
+
+
+c) Uso de KMEANS para realizar agrupaciones basadas en supervivencia.
+
+```{r}
+newdata.cl<-newdata
+newdata.cl$Survived<-NULL
+kmeans.res<-kmeans(newdata.cl,3)
+table(newdata$Survived,kmeans.res$cluster)
+
+
+```
+
+
+
+5. Representación de los resultados a partir de las tablas y gráficas 
+
+
+
+```{r}
+plot(modelo)
+```
+
+
+
+
+```{r}
+corrplot(correlacion, method = "ellipse")
+```
+
+
+
+6. Resolución del problema. A partir de lois resultados obtenidos, ¿Cuales son las conclusiones?
+
+
+Los datos no muestran una distribución normal. Existe una relación directa entre los supervivientes y el sexo o la clase en la que los pasajeros viajaban tal y como a priori podemos imaginar por el conocimiento previo de la historia del hundimiento. 
+
+Los datos pueden por sus relaciones posibilitar la generación de modelos de comportamiento que en base al resto de parámetros nos permita conocer la capacidad de un viajero de sobrevivir o de no hacerlo. 
+
+Los datos tenían una corrrecta calidad para su preparación y uso en la analítica de datos. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
